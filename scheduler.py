@@ -5,8 +5,10 @@ import threading
 from email_service import enviar_mail
 from telegram_service import enviar_telegram
 from dateutil.relativedelta import relativedelta
+import pytz # AGREGADO
 
-DB_NAME = "tareas.db"
+DB_NAME = "/data/tareas.db" # CLAVE: USAR /data
+ZONA_ARG = pytz.timezone('America/Argentina/Buenos_Aires') # CLAVE: ZONA ARG
 
 def get_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -14,12 +16,14 @@ def get_db():
     return conn
 
 def revisar_tareas():
-    ahora_dt = datetime.now()
-    hoy = ahora_dt.date()
-    ahora_hm = ahora_dt.strftime('%H:%M')
+    # CLAVE: Tomamos hora UTC y la convertimos a ARG
+    ahora_dt_utc = datetime.utcnow().replace(tzinfo=pytz.utc)
+    ahora_dt_ar = ahora_dt_utc.astimezone(ZONA_ARG)
     
-    print(f"[{ahora_dt.strftime('%Y-%m-%d %H:%M:%S')}] === REVISANDO ===")
-    print(f"Hora Server UTC: {ahora_hm} | Fecha: {hoy}")
+    hoy = ahora_dt_ar.date()
+    ahora_hm = ahora_dt_ar.strftime('%H:%M')
+    
+    print(f"[UTC:{ahora_dt_utc.strftime('%H:%M')}] [ARG:{ahora_hm}] === REVISANDO ===")
     
     try:
         conn = get_db()
@@ -104,4 +108,4 @@ def iniciar_scheduler():
     
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()
-    print("Scheduler iniciado. Revisando cada 30 segundos.")
+    print("Scheduler iniciado en ZONA ARGENTINA. Revisando cada 30 segundos.")
