@@ -16,23 +16,28 @@ def get_db():
 def revisar_tareas():
     ahora_dt = datetime.now()
     hoy = ahora_dt.date()
-    ahora_hm = ahora_dt.strftime('%H:%M') # solo hora y minuto
+    ahora_hm = ahora_dt.strftime('%H:%M')
     
     print(f"[{ahora_dt.strftime('%Y-%m-%d %H:%M:%S')}] === REVISANDO ===")
+    print(f"Hora Server UTC: {ahora_hm} | Fecha: {hoy}")
     
     try:
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT * FROM tareas WHERE enviado = 0")
         tareas = c.fetchall()
+        
+        print(f"Tareas pendientes: {len(tareas)}")
 
         for tarea in tareas:
             fecha_venc_str = tarea['fecha_proxima']
             if not fecha_venc_str: continue
 
             fecha_venc = datetime.strptime(fecha_venc_str, '%Y-%m-%d').date()
-            hora_envio_hm = tarea['hora_envio'][:5] # "09:00:00" -> "09:00"
+            hora_envio_hm = tarea['hora_envio'][:5]
             
+            print(f"  -> Chequeando: '{tarea['tarea']}' | Vence: {fecha_venc} {hora_envio_hm} | EmailAct:{tarea['email_activo']} TeleAct:{tarea['telegram_activo']}")
+
             enviar_hoy = False
             dias_ant_enviado = 0
 
@@ -41,30 +46,33 @@ def revisar_tareas():
                 dias_lista = [int(d) for d in tarea['dias_aviso'].split(',') if d.strip().isdigit()]
                 for dias_ant in dias_lista:
                     fecha_aviso = fecha_venc - timedelta(days=dias_ant)
-                    if fecha_aviso == hoy and hora_envio_hm == ahora_hm: # CAMBIO: == en vez de <=
+                    if fecha_aviso == hoy and hora_envio_hm == ahora_hm:
                         dias_ant_enviado = dias_ant
                         enviar_hoy = True
-                        print(f" -> [AVISO {dias_ant} dias] {tarea['tarea']}")
+                        print(f"     MATCH AVISO {dias_ant} dias")
 
             # 2. VENCE HOY
-            if fecha_venc == hoy and hora_envio_hm == ahora_hm: # CAMBIO: == en vez de <=
+            if fecha_venc == hoy and hora_envio_hm == ahora_hm:
                 dias_ant_enviado = 0
                 enviar_hoy = True
-                print(f" -> [ENVIADO VENCE HOY] {tarea['tarea']}")
+                print(f"     MATCH VENCE HOY")
 
             if enviar_hoy:
+                print(f"     ENVIANDO AHORA...")
                 # Enviar
                 if tarea['email_activo'] == 1 and tarea['destinatarios']:
                     try:
                         enviar_mail(tarea['tarea'], fecha_venc.strftime('%d/%m/%Y'), dias_ant_enviado, tarea['destinatarios'])
+                        print(f"     EMAIL OK")
                     except Exception as e:
-                        print(f"ERROR EMAIL: {e}")
+                        print(f"     ERROR EMAIL: {e}")
                 
                 if tarea['telegram_activo'] == 1 and tarea['destinatarios_telegram']:
                     try:
                         enviar_telegram(tarea['tarea'], fecha_venc.strftime('%Y-%m-%d'), dias_ant_enviado, tarea['destinatarios_telegram'])
+                        print(f"     TELEGRAM OK")
                     except Exception as e:
-                        print(f"ERROR TELEGRAM: {e}")
+                        print(f"     ERROR TELEGRAM: {e}")
 
                 # Actualizar repeticion
                 rep_hechas = tarea['repeticiones_hechas'] + 1
@@ -77,10 +85,10 @@ def revisar_tareas():
                     nueva_fecha = fecha_venc + delta
                     c.execute("UPDATE tareas SET fecha_proxima =?, repeticiones_hechas =? WHERE id =?",
                               (nueva_fecha.strftime('%Y-%m-%d'), rep_hechas, tarea['id']))
-                    print(f" -> [REPROGRAMADA] {tarea['tarea']} para {nueva_fecha}")
+                    print(f"     REPROGRAMADA para {nueva_fecha}")
                 else:
                     c.execute("UPDATE tareas SET enviado = 1 WHERE id =?", (tarea['id'],))
-                    print(f" -> [FINALIZADA] {tarea['tarea']}")
+                    print(f"     FINALIZADA")
         
         conn.commit()
         conn.close()
@@ -92,7 +100,7 @@ def iniciar_scheduler():
     def loop():
         while True:
             revisar_tareas()
-            time.sleep(30) # cada 30 seg
+            time.sleep(30)
     
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()
